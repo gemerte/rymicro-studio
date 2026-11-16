@@ -15,6 +15,9 @@ namespace RyMicro
         public string Manufacturer { get; set; }
         public int UsagePage { get; set; }
         public int Usage { get; set; }
+        public int OutputReportByteLength { get; set; }
+        public int FeatureReportByteLength { get; set; }
+        public bool CanWrite { get; set; }
     }
 
     /// <summary>Прямая отправка feature/output-репортов в HID-устройство (экспериментально).</summary>
@@ -48,6 +51,28 @@ namespace RyMicro
             public ushort VendorID;
             public ushort ProductID;
             public ushort VersionNumber;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct HIDP_CAPS
+        {
+            public ushort Usage;
+            public ushort UsagePage;
+            public ushort InputReportByteLength;
+            public ushort OutputReportByteLength;
+            public ushort FeatureReportByteLength;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 17)]
+            public ushort[] Reserved;
+            public ushort NumberLinkCollectionNodes;
+            public ushort NumberInputButtonCaps;
+            public ushort NumberInputValueCaps;
+            public ushort NumberInputDataIndices;
+            public ushort NumberOutputButtonCaps;
+            public ushort NumberOutputValueCaps;
+            public ushort NumberOutputDataIndices;
+            public ushort NumberFeatureButtonCaps;
+            public ushort NumberFeatureValueCaps;
+            public ushort NumberFeatureDataIndices;
         }
 
         [DllImport("setupapi.dll", CharSet = CharSet.Auto, SetLastError = true)]
@@ -85,6 +110,11 @@ namespace RyMicro
 
         [DllImport("hid.dll", SetLastError = true)]
         static extern bool HidD_FreePreparsedData(IntPtr preparsedData);
+
+        [DllImport("hid.dll")]
+        static extern int HidP_GetCaps(IntPtr preparsedData, out HIDP_CAPS capabilities);
+
+        const int HIDP_STATUS_SUCCESS = 0x00110000;
 
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         static extern SafeFileHandle CreateFile(string fileName, uint access, uint share,
@@ -140,6 +170,33 @@ namespace RyMicro
                                 if (HidD_GetProductString(h, sb, sb.Capacity * 2)) dev.Product = sb.ToString().Trim();
                                 sb = new StringBuilder(256);
                                 if (HidD_GetManufacturerString(h, sb, sb.Capacity * 2)) dev.Manufacturer = sb.ToString().Trim();
+
+                                IntPtr prep;
+                                if (HidD_GetPreparsedData(h, out prep) && prep != IntPtr.Zero)
+                                {
+                                    try
+                                    {
+                                        HIDP_CAPS caps;
+                                        if (HidP_GetCaps(prep, out caps) == HIDP_STATUS_SUCCESS)
+                                        {
+                                            dev.UsagePage = caps.UsagePage;
+                                            dev.Usage = caps.Usage;
+                                            dev.OutputReportByteLength = caps.OutputReportByteLength;
+                                            dev.FeatureReportByteLength = caps.FeatureReportByteLength;
+                                        }
+                                    }
+                                    finally { HidD_FreePreparsedData(prep); }
+                                }
+                            }
+                        }
+
+                        // Проверяем, можно ли открыть интерфейс на запись (без реальной отправки).
+                        if (!dev.CanWrite)
+                        {
+                            using (var w = CreateFile(path, GENERIC_WRITE,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero))
+                            {
+                                dev.CanWrite = !w.IsInvalid;
                             }
                         }
                         result.Add(dev);
@@ -153,14 +210,29 @@ namespace RyMicro
 
         public static HidDevice Find(int vid, int pid)
         {
+            return Find(vid, pid, 0);
+        }
+
+        public static HidDevice Find(int vid, int pid, int minUsagePage)
+        {
+            HidDevice fallback = null;
             foreach (var d in Enumerate())
-                if (d.Vid == vid && d.Pid == pid) return d;
-            return null;
+            {
+                if (d.Vid != vid || d.Pid != pid) continue;
+                if (d.UsagePage >= minUsagePage) return d;
+                if (fallback == null) fallback = d;
+            }
+            return fallback;
         }
 
         public static string Send(int vid, int pid, string hex, int reportId, bool outputReport)
         {
-            var dev = Find(vid, pid);
+            return Send(vid, pid, hex, reportId, outputReport, 0);
+        }
+
+        public static string Send(int vid, int pid, string hex, int reportId, bool outputReport, int minUsagePage)
+        {
+            var dev = Find(vid, pid, minUsagePage);
             if (dev == null) return "Устройство HID " + vid.ToString("X4") + ":" + pid.ToString("X4") + " не найдено";
 
             byte[] payload;
@@ -168,11 +240,16 @@ namespace RyMicro
             catch (Exception ex) { return "Ошибка HEX: " + ex.Message; }
 
             int size = 65;
+            if (outputReport && dev.OutputReportByteLength > 0)
+                size = Math.Max(dev.OutputReportByteLength, Math.Min(65, payload.Length + 1));
+            if (payload.Length + 1 > size) size = payload.Length + 1;
+
             var buffer = new byte[size];
             buffer[0] = (byte)reportId;
             Array.Copy(payload, 0, buffer, 1, Math.Min(payload.Length, size - 1));
 
-            using (var h = CreateFile(dev.Path, GENERIC_READ | GENERIC_WRITE,
+            string path = dev.Path;
+            using (var h = CreateFile(path, GENERIC_READ | GENERIC_WRITE,
                 FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero))
             {
                 if (h.IsInvalid) return "Не удалось открыть устройство (err " + Marshal.GetLastWin32Error() + ")";
@@ -181,7 +258,8 @@ namespace RyMicro
                 if (outputReport) ok = WriteFile(h, buffer, size, out written, IntPtr.Zero);
                 else ok = HidD_SetFeature(h, buffer, size);
                 if (!ok) return "Отправка не удалась (err " + Marshal.GetLastWin32Error() + ")";
-                return "OK: отправлено " + payload.Length + " байт (" + (outputReport ? "output" : "feature") + " report " + reportId + ")";
+                return "OK: отправлено " + payload.Length + " байт (" + (outputReport ? "output" : "feature") + " report " + reportId +
+                       ", usage page 0x" + dev.UsagePage.ToString("X4") + ")";
             }
         }
 

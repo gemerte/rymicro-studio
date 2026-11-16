@@ -140,7 +140,7 @@
           <div class="kb-legend">
             <span><i></i>ремап</span><span><i class="v"></i>макрос</span><span><i class="g"></i>текст</span>
             <span><i class="a"></i>запуск</span><span><i class="m"></i>слой / профиль</span>
-            <span style="color:#6c7790">перетащите клавишу на другую — быстрый ремап</span>
+            <span style="color:#6c7790">перетащите клавишу — ремап, Shift+перетаскивание — обмен местами</span>
           </div>
           <div class="livebar"><span class="lbl">Нажато</span><div id="liveKeys"></div><span class="grow"></span><span class="muted" id="liveInfo" style="font-size:11.5px"></span></div>
         </div>
@@ -199,8 +199,17 @@
       e.preventDefault();
       const from = A.drag;
       A.drag = null;
-      if (from === to.dataset.key) return;
-      await quickRemap(from, to.dataset.key);
+      const target = to.dataset.key;
+      if (from === target) return;
+      if (e.shiftKey) {
+        try {
+          await api('swap', { profile: A.cfg.ActiveProfile, layer: A.layer || null, a: from, b: target });
+          A.draft = A.sel ? draftFromRule(ruleFor(A.sel)) : null;
+          toast(keyName(from) + ' ⇄ ' + keyName(target), 'success');
+        } catch (err) { toast('Ошибка обмена: ' + err.message, 'error'); }
+        return;
+      }
+      await quickRemap(from, target);
     });
   }
   render.board = renderBoard;
@@ -361,8 +370,8 @@
     } else if (d.type === 'text') {
       body += field('Текст', '<textarea data-d="text" placeholder="Текст, который будет напечатан…">' + esc(d.text) + '</textarea>');
     } else if (d.type === 'app') {
-      body += field('Путь или URL', '<input type="text" data-d="path" list="appHints" placeholder="calc.exe, notepad.exe, https://…" value="' + esc(d.path) + '">' +
-        '<datalist id="appHints"><option value="calc.exe"><option value="notepad.exe"><option value="explorer.exe"><option value="https://github.com"></datalist>') +
+      body += field('Путь или URL', '<input type="text" data-d="path" list="appHints" placeholder="calc.exe, steam://open/main, https://…" value="' + esc(d.path) + '">' +
+        '<datalist id="appHints"><option value="calc.exe"><option value="notepad.exe"><option value="explorer.exe"><option value="steam://open/main"><option value="discord://"><option value="https://github.com"></datalist>') +
         field('Аргументы (необязательно)', '<input type="text" data-d="args" placeholder="--flag value" value="' + esc(d.args) + '">');
     } else if (d.type === 'run') {
       body += field('Команда CMD', '<input type="text" data-d="command" placeholder="shutdown /s /t 0" value="' + esc(d.command) + '">') +
@@ -380,7 +389,8 @@
       body += '<div class="empty">Клавиша будет полностью проглочена системой: ни игра, ни Windows её не увидят.</div>';
     }
 
-    body += '<hr class="sep">' +
+    body += '<div class="row" style="margin-bottom:12px"><button class="btn ghost sm" data-act="swap">⇄ Поменять местами с…</button></div>' +
+      '<hr class="sep">' +
       field('Заметка', '<input type="text" data-d="note" placeholder="Например: Caps → Esc для vim" value="' + esc(d.note) + '">') +
       '<label class="switch" style="margin-bottom:14px"><input type="checkbox" data-d="enabled"' + (d.enabled ? ' checked' : '') + '><span class="track"></span>Бинд включён</label>' +
       '<div class="row end"><button class="btn" data-act="save">Сохранить</button>' +
@@ -469,6 +479,21 @@
       d.steps = ((A.cfg.Macros[name] || {}).Steps || []).map((s) => Object.assign({}, s));
       toast('Добавлено шагов: ' + d.steps.length, 'success');
       renderInspector();
+    } else if (act === 'swap') {
+      startCapture({
+        mode: 'single',
+        title: 'Обмен клавиш',
+        sub: 'Нажмите вторую клавишу — «' + keyName(A.sel) + '» и она поменяются местами. Esc — отмена.',
+        onDone: async (id) => {
+          if (!id || id === A.sel) return;
+          try {
+            await api('swap', { profile: A.cfg.ActiveProfile, layer: A.layer || null, a: A.sel, b: id });
+            A.draft = draftFromRule(ruleFor(A.sel));
+            renderInspector();
+            toast(keyName(A.sel) + ' ⇄ ' + keyName(id), 'success');
+          } catch (err) { toast('Ошибка обмена: ' + err.message, 'error'); }
+        },
+      });
     } else if (act === 'save') {
       await saveRule();
     } else if (act === 'delete') {
@@ -540,7 +565,25 @@
       });
     }
 
-    p.innerHTML = `<div class="card">
+    p.innerHTML = `<div class="card" style="margin-bottom:14px">
+      <div class="row between" style="margin-bottom:10px">
+        <div><h3>Быстрые действия</h3>
+        <p class="sub" style="margin:3px 0 0">Шаблон → клавиша. Steam, Discord и сайты открываются через свои ссылки, если установлены.</p></div>
+      </div>
+      <div class="row" id="quickRow">
+        <button class="btn ghost sm" data-quick="steam">▶ Steam</button>
+        <button class="btn ghost sm" data-quick="discord">▶ Discord</button>
+        <button class="btn ghost sm" data-quick="browser">🌐 Сайт</button>
+        <button class="btn ghost sm" data-quick="calc">🧮 Калькулятор</button>
+        <button class="btn ghost sm" data-quick="explorer">📁 Проводник</button>
+        <button class="btn ghost sm" data-quick="notepad">📝 Блокнот</button>
+        <button class="btn ghost sm" data-quick="screenshot">✂ Скриншот</button>
+        <button class="btn ghost sm" data-quick="text">⌨ Вставить текст</button>
+        <button class="btn ghost sm" data-quick="command">⌘ Команда</button>
+      </div>
+      <div class="kbd-hint" style="margin-top:10px">Пример: «Steam» → выбрать клавишу <b>F8</b> → нажать F8, и Steam запускается. Всё это видно в таблице ниже и работает в любой программе.</div>
+    </div>
+    <div class="card">
       <div class="row between" style="margin-bottom:6px">
         <div><h3>Бинды · ${esc(A.cfg.ActiveProfile)}</h3>
         <p class="sub">Физическая клавиша → действие. Работает глобально, в любом приложении.</p></div>
@@ -570,6 +613,12 @@
       A.draft = draftFromRule(ruleFor(id));
       R.switchTab('board');
     }));
+
+    const quick = p.querySelector('#quickRow');
+    if (quick) quick.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-quick]');
+      if (b) quickBind(b.dataset.quick);
+    });
 
     p.querySelector('tbody').addEventListener('change', async (e) => {
       const cb = e.target.closest('[data-act="toggle-rule"]');
@@ -624,6 +673,63 @@
     $('#pkCancel').addEventListener('click', closeModal);
   }
   R.pickKey = pickKey;
+
+  /* -------------------------- быстрые шаблоны -------------------------- */
+
+  const QUICK = {
+    steam: { path: 'steam://open/main', note: 'Steam' },
+    discord: { path: 'discord://', note: 'Discord' },
+    calc: { path: 'calc.exe', note: 'Калькулятор' },
+    explorer: { path: 'explorer.exe', note: 'Проводник' },
+    notepad: { path: 'notepad.exe', note: 'Блокнот' },
+  };
+
+  async function quickBind(kind) {
+    if (kind === 'command') {
+      const cmd = await ask('Команда', 'Что выполнить? Например: shutdown /s /t 0 или start steam://open/main', 'start steam://open/main');
+      if (!cmd) return;
+      pickKey((id) => createQuick(id, { Type: 'run', Command: cmd }, 'команда'));
+      return;
+    }
+    if (kind === 'text') {
+      const text = await ask('Текст', 'Какой текст печатать при нажатии клавиши? Например: ваша почта или приветствие', '');
+      if (!text) return;
+      pickKey((id) => createQuick(id, { Type: 'text', Text: text }, 'текст'));
+      return;
+    }
+    if (kind === 'browser') {
+      const url = await ask('Сайт', 'Адрес, который откроется при нажатии:', 'https://');
+      if (!url || url === 'https://') return;
+      pickKey((id) => createQuick(id, { Type: 'app', Path: url }, 'сайт'));
+      return;
+    }
+    if (kind === 'screenshot') {
+      const steps = [
+        { Key: 'E05B', Down: true, DelayMs: 20 },
+        { Key: '2A', Down: true, DelayMs: 20 },
+        { Key: '1F', Down: true, DelayMs: 40 },
+        { Key: '1F', Down: false, DelayMs: 20 },
+        { Key: '2A', Down: false, DelayMs: 20 },
+        { Key: 'E05B', Down: false, DelayMs: 20 },
+      ];
+      pickKey((id) => createQuick(id, { Type: 'macro', Steps: steps }, 'скриншот'));
+      return;
+    }
+    const meta = QUICK[kind];
+    if (!meta) return;
+    pickKey((id) => createQuick(id, { Type: 'app', Path: meta.path }, meta.note));
+  }
+
+  async function createQuick(id, action, label) {
+    try {
+      await api('rule', {
+        op: 'upsert', profile: A.cfg.ActiveProfile, layer: A.layer || null,
+        rule: { From: id, Enabled: true, Note: label, Action: action },
+      });
+      toast(keyName(id) + ' → ' + label, 'success');
+    } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+  }
+  R.quickBind = quickBind;
 
   R.emptyDraft = emptyDraft;
   R.draftFromRule = draftFromRule;

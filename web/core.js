@@ -426,6 +426,8 @@
   /* ------------------------------- boot ------------------------------ */
 
   async function start() {
+    if (new URLSearchParams(location.search).get('noanim') === '1') document.body.classList.add('noanim');
+
     $('#tabs').addEventListener('click', (e) => {
       const b = e.target.closest('.tab');
       if (b) switchTab(b.dataset.tab);

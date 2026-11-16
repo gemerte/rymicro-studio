@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Web.Script.Serialization;
 
 namespace RyMicro
@@ -14,6 +15,7 @@ namespace RyMicro
         public LightingConfig Lighting { get; set; }
         public Dictionary<string, int> Stats { get; set; }
         public Dictionary<string, Macro> Macros { get; set; }
+        public string RemoteToken { get; set; }
 
         public Config()
         {
@@ -96,10 +98,13 @@ namespace RyMicro
         public bool StatsEnabled { get; set; }
         public int Port { get; set; }
         public string Theme { get; set; }
+        public bool RemoteEnabled { get; set; }
+        public int RemotePort { get; set; }
 
         public Settings()
         {
             SoundVolume = 25; AutoSwitch = true; StatsEnabled = true; Port = 47831; Theme = "neon";
+            RemoteEnabled = true; RemotePort = 47832;
         }
     }
 
@@ -215,7 +220,23 @@ namespace RyMicro
             if (string.IsNullOrEmpty(c.ActiveProfile) || !c.Profiles.ContainsKey(c.ActiveProfile))
                 c.ActiveProfile = c.Profiles.ContainsKey("default") ? "default" : FirstKey(c.Profiles);
             if (c.Settings.Port < 1024) c.Settings.Port = 47831;
+            if (c.Settings.RemotePort < 1024) c.Settings.RemotePort = 47832;
+            if (c.Version < 2)
+            {
+                c.Settings.RemoteEnabled = true;
+                c.Version = 2;
+            }
+            if (string.IsNullOrEmpty(c.RemoteToken)) c.RemoteToken = NewToken();
             return c;
+        }
+
+        public static string NewToken()
+        {
+            var b = new byte[8];
+            using (var r = System.Security.Cryptography.RandomNumberGenerator.Create()) r.GetBytes(b);
+            var sb = new StringBuilder();
+            foreach (var x in b) sb.Append(x.ToString("x2"));
+            return sb.ToString();
         }
 
         static string FirstKey(Dictionary<string, Profile> d)

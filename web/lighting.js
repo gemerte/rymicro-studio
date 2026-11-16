@@ -74,6 +74,19 @@
     }
 
     p.innerHTML = `
+      <div class="card wide" id="lightBanner" style="border-color:rgba(255,200,87,.35);background:linear-gradient(180deg,rgba(255,200,87,.08),rgba(255,200,87,.02))">
+        <div class="row between" style="align-items:flex-start;gap:14px;flex-wrap:wrap">
+          <div style="flex:1;min-width:260px">
+            <h3 style="margin:0 0 4px">Подсветка на железе</h3>
+            <p class="sub" style="margin:0" id="diagText">Нажмите «Проверить доступ» — программа посмотрит HID-интерфейсы клавиатуры и честно скажет, можно ли менять подсветку программно.</p>
+          </div>
+          <div class="row">
+            <button class="btn ghost sm" data-act="diag">Проверить доступ</button>
+          </div>
+        </div>
+        <div class="kbd-hint" style="margin-top:10px">Схема ниже (цвета, эффекты, PNG/WebM) — это <b>превью и дизайн</b>. На большинстве бюджетных клавиатур RGB управляется прошивкой через <b>FN</b>, и софт его не меняет. Если найдётся vendor-интерфейс — появится шанс слать HID-пакеты.</div>
+      </div>
+
       <div class="light-grid">
         <div class="card wide">
           <div class="row between" style="margin-bottom:10px">
@@ -134,6 +147,7 @@
           <div class="row" style="margin-bottom:8px">
             <input type="text" id="hidVid" value="352D" style="width:80px" title="VID (hex)">
             <input type="text" id="hidPid" value="2380" style="width:80px" title="PID (hex)">
+            <input type="text" id="hidUsage" value="FF00" style="width:86px" title="Минимальный usage page (hex). FF00 — vendor-интерфейс; пусто = любой">
             <input type="number" id="hidReport" value="0" min="0" max="255" style="width:76px" title="Report ID">
             <select id="hidType" style="width:110px"><option value="feature">feature</option><option value="output">output</option></select>
             <button class="btn ghost sm" data-act="hid-refresh">Найти устройства</button>
@@ -259,6 +273,22 @@
         s.Colors = [s.Colors[1] || s.Colors[0], s.Colors[0] || s.Colors[1]];
         saveLighting();
         renderLighting();
+      } else if (act === 'diag') {
+        const box = document.getElementById('diagText');
+        logRgb('Проверяю HID-интерфейсы клавиатуры…', true);
+        try {
+          const r = await apiGet('lighting-diag');
+          const vend = (r.devices || []).filter((d) => d.vendorSpecific);
+          const kb = (r.devices || []).filter((d) => d.vid === '352D' && d.pid === '2380');
+          if (box) box.textContent = r.verdict;
+          logRgb(r.verdict, !!r.vendorWritable);
+          logRgb('Интерфейсов клавиатуры: ' + kb.length + ', из них vendor: ' + vend.length +
+            (vend.length ? ' (' + vend.map((d) => d.usagePage + ', out=' + d.outputLen).join(', ') + ')' : ''), true);
+          logRgb('OpenRGB ' + r.openRgb.host + ':' + r.openRgb.port + ' — ' + (r.openRgbError ? 'ошибка: ' + r.openRgbError : 'настроен, нажмите «Проверить»'), !r.openRgbError);
+        } catch (err) {
+          if (box) box.textContent = 'Не удалось проверить: ' + err.message;
+          logRgb('Ошибка диагностики: ' + err.message, false);
+        }
       } else if (act === 'png') {
         exportPng();
       } else if (act === 'webm') {
@@ -376,6 +406,7 @@
     const body = {
       vid: ($('#hidVid') || {}).value || '352D',
       pid: ($('#hidPid') || {}).value || '2380',
+      usagePage: (($('#hidUsage') || {}).value || '').trim(),
       hex,
       reportId: Number(($('#hidReport') || {}).value || 0),
       output: (($('#hidType') || {}).value || 'feature') === 'output',

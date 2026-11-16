@@ -363,6 +363,31 @@
       </div>
 
       <div class="card">
+        <h3>Пульт для телефона / планшета</h3>
+        <p class="sub">Откройте ссылку на телефоне в той же Wi-Fi сети — и запускайте Steam, Discord, программы и макросы на ПК одним касанием.</p>
+        <div class="set-row">
+          <div><div class="t">Включить пульт</div><div class="d">Локальный сервер на порту ${esc(String(s.RemotePort || 47832))} (без доступа из интернета).</div></div>
+          <label class="switch"><input type="checkbox" id="setRemote"${s.RemoteEnabled ? ' checked' : ''}><span class="track"></span></label>
+        </div>
+        <div class="field" style="margin-top:10px"><label>Порт пульта</label>
+          <div class="row"><input type="number" id="setRemotePort" min="1024" max="65535" value="${Number(s.RemotePort || 47832)}" style="width:120px">
+          <button class="btn ghost sm" id="remoteApply">Применить</button></div>
+        </div>
+        <div class="field"><label>Ссылка для телефона</label>
+          <div class="row"><input type="text" id="remUrl" readonly value="…" class="mono" style="flex:1;min-width:200px;font-size:12px">
+          <button class="btn ghost sm" id="remCopy">Копировать</button></div>
+        </div>
+        <div class="row" style="margin-bottom:10px">
+          <button class="btn ghost sm" id="remOpen">Открыть на ПК</button>
+          <button class="btn ghost sm" id="remShow">Показать крупно</button>
+          <button class="btn ghost sm" id="remFw">Разрешить в брандмауэре</button>
+          <button class="btn ghost sm" id="remNewToken">Новый код доступа</button>
+        </div>
+        <div class="console" id="remLog" style="height:auto;max-height:120px">Проверяю…</div>
+        <div class="kbd-hint" style="margin-top:10px">Если телефон не открывает страницу — нажмите «Разрешить в брандмауэре» и подтвердите запрос администратора Windows.</div>
+      </div>
+
+      <div class="card">
         <h3>Данные</h3>
         <p class="sub">Конфиг — обычный JSON, его удобно хранить в git.</p>
         <div class="row" style="margin-bottom:10px">
@@ -413,6 +438,63 @@
     $('#setStart').addEventListener('change', (e) => save({ StartWithWindows: e.target.checked }));
     $('#setVol').addEventListener('input', (e) => { $('#volVal').textContent = e.target.value; });
     $('#setVol').addEventListener('change', (e) => save({ SoundVolume: Number(e.target.value) }));
+
+    const remLog = (msg, ok) => {
+      const box = $('#remLog');
+      if (!box) return;
+      box.textContent = msg;
+      box.style.color = ok === false ? '#ff8fa3' : (ok ? '#8ff0c0' : '');
+    };
+    const loadRemote = async () => {
+      try {
+        const r = await apiGet('remote-status');
+        $('#remUrl').value = r.url || '';
+        remLog(r.running ? 'Пульт работает. Ссылка: ' + r.url : ('Пульт выключен' + (r.error ? '. Ошибка: ' + r.error : '')), !!r.running);
+      } catch (e) { remLog('Статус недоступен: ' + e.message, false); }
+    };
+    loadRemote();
+
+    if ($('#setRemote')) $('#setRemote').addEventListener('change', async (e) => {
+      await save({ RemoteEnabled: e.target.checked });
+      try { await api('remote-apply', {}); } catch (err) { /* noop */ }
+      loadRemote();
+    });
+    if ($('#remoteApply')) $('#remoteApply').addEventListener('click', async () => {
+      const port = Number($('#setRemotePort').value || 47832);
+      await save({ RemotePort: port });
+      try {
+        const r = await api('remote-apply', {});
+        remLog(r.ok ? 'Пульт перезапущен на порту ' + port : ('Ошибка: ' + (r.error || 'не удалось занять порт')), !!r.ok);
+      } catch (err) { remLog('Ошибка: ' + err.message, false); }
+      loadRemote();
+    });
+    if ($('#remCopy')) $('#remCopy').addEventListener('click', async () => {
+      const url = $('#remUrl').value;
+      try { await navigator.clipboard.writeText(url); toast('Ссылка скопирована', 'success'); }
+      catch (e) { $('#remUrl').select(); toast('Нажмите Ctrl+C', 'info'); }
+    });
+    if ($('#remOpen')) $('#remOpen').addEventListener('click', async () => {
+      try { await api('remote-open', {}); } catch (e) { toast('Ошибка: ' + e.message, 'error'); }
+    });
+    if ($('#remShow')) $('#remShow').addEventListener('click', () => {
+      openModal('Ссылка для телефона', '<p class="sub">Откройте этот адрес в браузере телефона в той же Wi-Fi сети:</p>' +
+        '<div class="console" style="font-size:15px;word-break:break-all;user-select:all">' + esc($('#remUrl').value) + '</div>');
+    });
+    if ($('#remFw')) $('#remFw').addEventListener('click', async () => {
+      try {
+        const r = await api('firewall', {});
+        remLog(r.message || r.error || 'Готово', r.ok);
+      } catch (e) { remLog('Ошибка: ' + e.message, false); }
+    });
+    if ($('#remNewToken')) $('#remNewToken').addEventListener('click', async () => {
+      const ok = await confirmBox('Новый код доступа?', 'Старая ссылка на телефоне перестанет работать — откройте новую.', 'Сменить код');
+      if (!ok) return;
+      try {
+        const r = await api('remote-token', {});
+        $('#remUrl').value = r.url || '';
+        remLog('Новый код создан. Ссылка обновлена.', true);
+      } catch (e) { remLog('Ошибка: ' + e.message, false); }
+    });
 
     $('#exportCfg').addEventListener('click', () => {
       const blob = new Blob([JSON.stringify(A.cfg, null, 2)], { type: 'application/json' });

@@ -103,7 +103,7 @@ namespace RyMicro
 
     public static class Http
     {
-        public const string Version = "1.0.0";
+        public const string Version = "1.1.0";
         static HttpListener _listener;
         public static int Port;
         public static string Token;
@@ -354,8 +354,62 @@ namespace RyMicro
             {
                 var list = new List<object>();
                 foreach (var d in Hid.Enumerate())
-                    list.Add(new { path = d.Path, vid = d.Vid, pid = d.Pid, product = d.Product, manufacturer = d.Manufacturer });
+                    list.Add(new
+                    {
+                        path = d.Path, vid = d.Vid, pid = d.Pid, product = d.Product, manufacturer = d.Manufacturer,
+                        usagePage = "0x" + d.UsagePage.ToString("X4"), usage = "0x" + d.Usage.ToString("X4"),
+                        outputLen = d.OutputReportByteLength, featureLen = d.FeatureReportByteLength, canWrite = d.CanWrite
+                    });
                 Reply(res, Cfg.ToJson(new { ok = true, devices = list, keyboard = Program.Keyboard }));
+                return;
+            }
+            if (name == "lighting-diag" && get)
+            {
+                var devs = new List<object>();
+                bool vendorWritable = false;
+                bool anyVendor = false;
+                foreach (var d in Hid.Enumerate())
+                {
+                    bool vendor = d.UsagePage >= 0xFF00;
+                    if (vendor) anyVendor = true;
+                    if (vendor && d.CanWrite) vendorWritable = true;
+                    devs.Add(new
+                    {
+                        vid = d.Vid.ToString("X4"),
+                        pid = d.Pid.ToString("X4"),
+                        product = d.Product,
+                        usagePage = "0x" + d.UsagePage.ToString("X4"),
+                        usage = "0x" + d.Usage.ToString("X4"),
+                        vendorSpecific = vendor,
+                        outputLen = d.OutputReportByteLength,
+                        featureLen = d.FeatureReportByteLength,
+                        canWrite = d.CanWrite
+                    });
+                }
+                var or = Cfg.Current.Lighting.OpenRgb;
+                string verdict;
+                if (devs.Count == 0)
+                    verdict = "HID-интерфейсы не найдены. Клавиатура подключена?";
+                else if (vendorWritable)
+                    verdict = "На клавиатуре есть vendor-интерфейс (usage page 0xFF00, 64-байтный output report). Это шанс отправлять команды подсветки напрямую, но протокол проприетарный — готовых команд нет. Попробуйте сниппеты HID и OpenRGB.";
+                else if (anyVendor)
+                    verdict = "Vendor-интерфейс есть, но запись закрыта. Подсветка управляется прошивкой (FN).";
+                else
+                    verdict = "Доступен только стандартный интерфейс клавиатуры (usage page 0x0001). Подсветка управляется прошивкой через FN — программно изменить нельзя (см. docs/LIGHTING.md).";
+                Reply(res, Cfg.ToJson(new
+                {
+                    ok = true,
+                    devices = devs,
+                    vendorWritable = vendorWritable,
+                    openRgb = new { host = or.Host, port = or.Port, device = or.Device, ledCount = or.LedCount },
+                    openRgbError = OpenRgb.LastError,
+                    verdict = verdict
+                }));
+                return;
+            }
+            if (name == "remote-status" && get)
+            {
+                Reply(res, Remote.StatusJson());
                 return;
             }
 
@@ -383,9 +437,54 @@ namespace RyMicro
                         Cfg.Current.Settings = s;
                         Sys.SetAutostart(s.StartWithWindows);
                         Cfg.Save();
+                        Remote.Apply();
                         BroadcastState();
                     }
                     Reply(res, Cfg.ToJson(new { ok = true }));
+                    return;
+                }
+
+                if (name == "remote-apply")
+                {
+                    Remote.Apply();
+                    Reply(res, Cfg.ToJson(new { ok = Remote.LastError == null, error = Remote.LastError, status = Remote.StatusJson() }));
+                    return;
+                }
+
+                if (name == "remote-token")
+                {
+                    Cfg.Current.RemoteToken = Cfg.NewToken();
+                    Cfg.Save();
+                    BroadcastState();
+                    Reply(res, Cfg.ToJson(new { ok = true, token = Cfg.Current.RemoteToken, url = Remote.LanUrl() }));
+                    return;
+                }
+
+                if (name == "remote-open")
+                {
+                    Sys.OpenUrl(Remote.LanUrl());
+                    Reply(res, Cfg.ToJson(new { ok = true, url = Remote.LanUrl() }));
+                    return;
+                }
+
+                if (name == "firewall")
+                {
+                    int port = Cfg.Current.Settings.RemotePort;
+                    string args = "advfirewall firewall add rule name=\"RYMICRO Пульт\" dir=in action=allow protocol=TCP localport=" + port;
+                    try
+                    {
+                        var psi = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "netsh", Arguments = args, UseShellExecute = true, Verb = "runas",
+                            WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
+                        };
+                        System.Diagnostics.Process.Start(psi);
+                        Reply(res, Cfg.ToJson(new { ok = true, message = "Подтвердите запрос администратора Windows" }));
+                    }
+                    catch (Exception ex)
+                    {
+                        Reply(res, Cfg.ToJson(new { ok = false, error = ex.Message }));
+                    }
                     return;
                 }
 
@@ -484,6 +583,49 @@ namespace RyMicro
                     Cfg.Save();
                     BroadcastState();
                     Reply(res, Cfg.ToJson(new { ok = true, profile = Cfg.Current.Profiles[Cfg.Current.ActiveProfile] }));
+                    return;
+                }
+
+                if (name == "swap")
+                {
+                    string pname = S(d, "profile") ?? Cfg.Current.ActiveProfile;
+                    string layer = S(d, "layer");
+                    string a = S(d, "a");
+                    string b = S(d, "b");
+                    Profile profile;
+                    if (pname == null || !Cfg.Current.Profiles.TryGetValue(pname, out profile) ||
+                        string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b) || a == b)
+                    {
+                        Json(res, 400, new { ok = false, error = "Нужны два разных ключа и профиль" });
+                        return;
+                    }
+                    List<Rule> list = profile.Rules;
+                    if (!string.IsNullOrEmpty(layer))
+                    {
+                        if (!profile.Layers.TryGetValue(layer, out list))
+                        {
+                            list = new List<Rule>();
+                            profile.Layers[layer] = list;
+                        }
+                    }
+                    list.RemoveAll(x => string.Equals(x.From, a, StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(x.From, b, StringComparison.OrdinalIgnoreCase));
+                    list.Add(new Rule
+                    {
+                        Id = Guid.NewGuid().ToString("N").Substring(0, 8),
+                        From = a, Enabled = true, Note = "обмен с " + Keys.NameOf(b),
+                        Action = new ActionSpec { Type = "remap", Key = b }
+                    });
+                    list.Add(new Rule
+                    {
+                        Id = Guid.NewGuid().ToString("N").Substring(0, 8),
+                        From = b, Enabled = true, Note = "обмен с " + Keys.NameOf(a),
+                        Action = new ActionSpec { Type = "remap", Key = a }
+                    });
+                    Cfg.Save();
+                    Engine.ResetHeld();
+                    BroadcastState();
+                    Reply(res, Cfg.ToJson(new { ok = true, swapped = new[] { a, b } }));
                     return;
                 }
 
@@ -663,7 +805,8 @@ namespace RyMicro
                     {
                         int vid = ParseHexInt(S(d, "vid", "352D"));
                         int pid = ParseHexInt(S(d, "pid", "2380"));
-                        string result = Hid.Send(vid, pid, S(d, "hex", ""), I(d, "reportId"), B(d, "output"));
+                        int minUsage = ParseHexInt(S(d, "usagePage", "0"));
+                        string result = Hid.Send(vid, pid, S(d, "hex", ""), I(d, "reportId"), B(d, "output"), minUsage);
                         Reply(res, Cfg.ToJson(new { ok = result.StartsWith("OK"), message = result }));
                     }
                     catch (Exception ex) { Json(res, 400, new { ok = false, error = ex.Message }); }

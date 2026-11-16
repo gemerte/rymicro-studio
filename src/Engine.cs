@@ -185,17 +185,17 @@ namespace RyMicro
                         {
                             if (HeldTargets.TryGetValue(e.Id, out held))
                             {
-                                foreach (var t in held) Native.SendVk(t.Vk, t.Ext, true);
+                                foreach (var t in held) Native.SendScan(t.Scan, t.Ext, true);
                                 return;
                             }
-                            foreach (var t in targets) Native.SendVk(t.Vk, t.Ext, true);
+                            foreach (var t in targets) Native.SendScan(t.Scan, t.Ext, true);
                             HeldTargets[e.Id] = targets;
                         }
                         else
                         {
                             if (HeldTargets.TryGetValue(e.Id, out held))
                             {
-                                for (int i = held.Count - 1; i >= 0; i--) Native.SendVk(held[i].Vk, held[i].Ext, false);
+                                for (int i = held.Count - 1; i >= 0; i--) Native.SendScan(held[i].Scan, held[i].Ext, false);
                                 HeldTargets.Remove(e.Id);
                             }
                         }
@@ -316,7 +316,7 @@ namespace RyMicro
                     else
                     {
                         var k = Keys.Get(s.Key);
-                        if (k != null) Native.SendVk(k.Vk, k.Ext, s.Down);
+                        if (k != null) Native.SendScan(k.Scan, k.Ext, s.Down);
                     }
                     int d = s.DelayMs + extraDelay;
                     if (d > 0) Thread.Sleep(Math.Min(d, 5000));
@@ -389,9 +389,9 @@ namespace RyMicro
             {
                 var keys = new List<KeyDef>();
                 foreach (var id in ids) { var k = Keys.Get(id); if (k != null) keys.Add(k); }
-                foreach (var k in keys) Native.SendVk(k.Vk, k.Ext, true);
+                foreach (var k in keys) Native.SendScan(k.Scan, k.Ext, true);
                 Thread.Sleep(Math.Max(30, holdMs));
-                for (int i = keys.Count - 1; i >= 0; i--) Native.SendVk(keys[i].Vk, keys[i].Ext, false);
+                for (int i = keys.Count - 1; i >= 0; i--) Native.SendScan(keys[i].Scan, keys[i].Ext, false);
             });
         }
 

@@ -131,6 +131,16 @@ namespace RyMicro
             SendInput(1, new[] { inp }, Marshal.SizeOf(typeof(INPUT)));
         }
 
+        /// <summary>Отправка по скан-коду: надёжнее для модификаторов (Win/Alt) и игр.</summary>
+        public static void SendScan(int scan, bool ext, bool down)
+        {
+            var inp = new INPUT { type = INPUT_KEYBOARD };
+            inp.u.ki.wVk = 0;
+            inp.u.ki.wScan = (ushort)scan;
+            inp.u.ki.dwFlags = KEYEVENTF_SCANCODE | (ext ? KEYEVENTF_EXTENDEDKEY : 0) | (down ? 0 : KEYEVENTF_KEYUP);
+            SendInput(1, new[] { inp }, Marshal.SizeOf(typeof(INPUT)));
+        }
+
         public static void SendUnicode(char ch, bool down)
         {
             var inp = new INPUT { type = INPUT_KEYBOARD };

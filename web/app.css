@@ -392,3 +392,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
 @keyframes spin{to{transform:rotate(360deg)}}
 
 kbd{font:600 11px Consolas,monospace;background:rgba(255,255,255,.07);border:1px solid var(--line2);border-bottom-width:2px;border-radius:5px;padding:1px 6px;color:#d6e2f2}
+
+/* отключение анимаций для скриншотов (?noanim=1) */
+body.noanim *,body.noanim *::before,body.noanim *::after{animation:none!important;transition:none!important}

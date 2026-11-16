@@ -61,6 +61,7 @@ namespace RyMicro
 
             int usePort = Sys.FindPort(port > 0 ? port : Cfg.Current.Settings.Port);
             Http.Start(usePort);
+            Remote.Apply();
 
             _autoTimer = new System.Threading.Timer(_ => AutoSwitch(), null, 1200, 1200);
             _statsTimer = new System.Threading.Timer(_ =>
@@ -134,6 +135,10 @@ namespace RyMicro
             var open = new ToolStripMenuItem("Открыть панель", null, (s, e) => Sys.OpenUrl(Http.Url));
             open.Font = new Font(open.Font, FontStyle.Bold);
             menu.Items.Add(open);
+
+            var remote = new ToolStripMenuItem("Пульт для телефона", null, (s, e) => Sys.OpenUrl(Remote.LanUrl()));
+            remote.Enabled = Cfg.Current.Settings.RemoteEnabled;
+            menu.Items.Add(remote);
 
             var pause = new ToolStripMenuItem("Пауза (ремап выключен)", null, (s, e) =>
             {
