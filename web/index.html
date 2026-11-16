@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>RYMICRO Studio — клавиатура RY Micro</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">R</div>
+    <div>
+      <h1>RYMICRO <span>STUDIO</span></h1>
+      <div class="sub" id="devLine">определяю клавиатуру…</div>
+    </div>
+  </div>
+  <div class="top-actions">
+    <div class="pill" id="hookState">● подключение…</div>
+    <div class="profile-wrap">
+      <label for="profileSel">Профиль</label>
+      <select id="profileSel" title="Активный профиль"></select>
+    </div>
+    <button class="btn ghost" id="pauseBtn" title="Временно выключить все бинды">⏸ Пауза</button>
+    <button class="btn ghost icon" id="aboutBtn" title="О программе">?</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-tab="board"><span class="ico">▦</span>Клавиатура</button>
+  <button class="tab" data-tab="rules"><span class="ico">⚡</span>Бинды</button>
+  <button class="tab" data-tab="profiles"><span class="ico">◈</span>Профили</button>
+  <button class="tab" data-tab="lighting"><span class="ico">◐</span>Подсветка</button>
+  <button class="tab" data-tab="macros"><span class="ico">▶</span>Макросы</button>
+  <button class="tab" data-tab="stats"><span class="ico">▊</span>Статистика</button>
+  <button class="tab" data-tab="settings"><span class="ico">⚙</span>Настройки</button>
+</nav>
+
+<main id="app">
+  <div class="loading"><div class="spinner"></div><div>Загружаю RYMICRO Studio…</div></div>
+</main>
+
+<section id="capture">
+  <div class="capture-box">
+    <div class="pulse">⌨</div>
+    <h3 id="capTitle">Нажмите клавишу</h3>
+    <p id="capSub">Нажмите любую клавишу на клавиатуре. Ремап временно приостановлен.</p>
+    <div class="row" style="justify-content:center" id="capChips"></div>
+    <div class="row" style="justify-content:center;margin-top:14px">
+      <button class="btn ghost" id="capCancel">Отмена</button>
+      <button class="btn" id="capDone" style="display:none">Готово</button>
+    </div>
+  </div>
+</section>
+
+<div id="modal"></div>
+<div id="toasts"></div>
+
+<script>
+  if (new URLSearchParams(location.search).get('debug') === '1') {
+    window.addEventListener('error', function (e) {
+      var d = document.createElement('div');
+      d.className = 'toast err';
+      d.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:999;max-width:70vw;white-space:pre-wrap';
+      d.textContent = 'JS ERROR: ' + e.message + ' @ ' + e.filename + ':' + e.lineno;
+      document.body.appendChild(d);
+    });
+  }
+</script>
+<script src="core.js"></script>
+<script src="board.js"></script>
+<script src="lighting.js"></script>
+<script src="pages.js"></script>
+<script>RY.start();</script>
+</body>
+</html>

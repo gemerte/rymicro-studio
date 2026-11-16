@@ -1,0 +1,15 @@
+# сборочные артефакты
+/RYMICRO Studio.exe
+*.pdb
+*.obj
+
+# личный конфиг и состояние
+/config/
+/logs/
+
+# временные файлы
+*.tmp
+*.bak
+Thumbs.db
+desktop.ini
+.vs/
