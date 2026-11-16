@@ -74,6 +74,10 @@
 
 ## Быстрый старт
 
+Готовая сборка: [RYMICRO-Studio-1.0.0.zip](https://github.com/gemerte/rymicro-studio/releases/latest) — распакуйте и запустите `start.cmd`.
+
+Или соберите сами:
+
 ```powershell
 # сборка
 powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
