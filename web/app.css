@@ -395,3 +395,9 @@ kbd{font:600 11px Consolas,monospace;background:rgba(255,255,255,.07);border:1px
 
 /* отключение анимаций для скриншотов (?noanim=1) */
 body.noanim *,body.noanim *::before,body.noanim *::after{animation:none!important;transition:none!important}
+
+.klog{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.03);font-size:12px;margin-bottom:5px}
+.klog .mono{color:#8f9cb3;font-size:11.5px}
+.klog .ok{color:#7ee2b8}
+.klog .err{color:#ff8fa3}
+.klog b{color:#dbe6f7;font-weight:600}

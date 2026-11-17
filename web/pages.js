@@ -2,8 +2,8 @@
 (() => {
   'use strict';
   const R = window.RY;
-  const { A, $, esc, fmt, clamp, api, apiGet, keyName, profileObj, toast, openModal, closeModal,
-    ask, confirmBox, startCapture, render, section } = R;
+  const { A, $, $$, esc, fmt, clamp, api, apiGet, keyName, profileObj, toast, openModal, closeModal,
+    ask, confirmBox, startCapture, render, section, actionSummary } = R;
 
   /* ============================== ПРОФИЛИ ============================== */
 
@@ -405,6 +405,19 @@
       </div>
 
       <div class="card">
+        <h3>Диагностика клавиш</h3>
+        <p class="sub">Нажмите клавишу на клавиатуре — здесь появится её scan code и какое правило сработает. Это лучший способ понять, почему бинд «не работает».</p>
+        <div class="console" id="keyLogBox" style="height:auto;max-height:220px;display:flex;flex-direction:column;gap:2px">нажмите любую клавишу…</div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn ghost sm" id="keyLogClear">Очистить</button>
+          <button class="btn ghost sm" data-resolve="E05B">Правило для Win</button>
+          <button class="btn ghost sm" data-resolve="38">Правило для Alt</button>
+        </div>
+        <div class="console" id="resolveLog" style="height:auto;margin-top:10px;display:none"></div>
+        <div class="kbd-hint" style="margin-top:10px">Win и Alt меняются местами так: вкладка «Клавиатура» → выберите Win → «⇄ Поменять местами с…» → нажмите Alt. Обе клавиши получат правило в двух направлениях.</div>
+      </div>
+
+      <div class="card">
         <h3>Приложение</h3>
         <p class="sub">Служебная информация.</p>
         <div class="set-row"><div class="t">Версия</div><div class="mono">${esc(A.ver || '—')}</div></div>
@@ -495,6 +508,26 @@
         remLog('Новый код создан. Ссылка обновлена.', true);
       } catch (e) { remLog('Ошибка: ' + e.message, false); }
     });
+
+    /* диагностика клавиш */
+    R.renderKeyLog();
+    if ($('#keyLogClear')) $('#keyLogClear').addEventListener('click', () => { A.keyLog = []; R.renderKeyLog(); });
+    $$('[data-resolve]').forEach((b) => b.addEventListener('click', async () => {
+      const id = b.dataset.resolve;
+      const box = $('#resolveLog');
+      try {
+        const r = await apiGet('resolve', { id, profile: A.cfg.ActiveProfile, layer: A.layer || '' });
+        box.style.display = 'block';
+        box.textContent = r.matched
+          ? id + ': правило ' + r.from + (r.viaAlias ? ' (совпало как алиас)' : '') + ' · ' + (r.enabled ? 'включено' : 'ВЫКЛЮЧЕНО') + ' · ' + actionSummary(r.action)
+          : id + ': правила нет. Назначьте действие на эту клавишу.';
+        box.style.color = r.matched && r.enabled ? '#8ff0c0' : '#ffb0be';
+      } catch (e) {
+        box.style.display = 'block';
+        box.textContent = 'Ошибка: ' + e.message;
+        box.style.color = '#ffb0be';
+      }
+    }));
 
     $('#exportCfg').addEventListener('click', () => {
       const blob = new Blob([JSON.stringify(A.cfg, null, 2)], { type: 'application/json' });

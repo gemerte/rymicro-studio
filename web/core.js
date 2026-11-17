@@ -17,7 +17,7 @@
     drag: null, capture: null, audio: null, lastSound: 0,
     macroSel: null, macroDraft: null, rgbLog: [], hidDevices: [],
     pendingState: null, connected: false, sse: null, ready: false,
-    saveTimer: null, lightingTimer: null,
+    saveTimer: null, lightingTimer: null, keyLog: [],
   };
   const R = {};
 
@@ -168,6 +168,9 @@
   }
 
   function onKey(d) {
+    A.keyLog.unshift(d);
+    if (A.keyLog.length > 14) A.keyLog.length = 14;
+    renderKeyLog();
     if (d.Injected) return;
     if (d.Down) {
       if (!A.live.has(d.Id)) {
@@ -204,8 +207,39 @@
     if (info) info.textContent = A.pressedTotal ? 'за сессию: ' + fmt(A.pressedTotal) : '';
   }
 
-  function pulseStrips() {
-    const s = A.cfg && A.cfg.Lighting;
+  const CANON = {
+    '5B': 'LWIN', E05B: 'LWIN', '5C': 'RWIN', E05C: 'RWIN', '5D': 'MENU', E05D: 'MENU',
+    '38': 'ALT', E038: 'ALT', '1D': 'CTRL', E01D: 'CTRL', '2A': 'SHIFT', '36': 'SHIFT',
+  };
+  const canonKey = (id) => CANON[String(id || '').toUpperCase()] || null;
+  const sameKey = (a, b) => {
+    const x = String(a || '').toUpperCase(), y = String(b || '').toUpperCase();
+    if (x && x === y) return true;
+    const ca = canonKey(x);
+    return ca !== null && ca === canonKey(y);
+  };
+  const hex2 = (n) => Number(n || 0).toString(16).toUpperCase().padStart(2, '0');
+
+  function renderKeyLog() {
+    const box = $('#keyLogBox');
+    if (!box) return;
+    if (!A.keyLog.length) { box.innerHTML = '<div class="muted" style="font-size:12px">нажмите любую клавишу…</div>'; return; }
+    const rules = rulesForLayer(profileObj(), A.layer) || [];
+    box.innerHTML = A.keyLog.map((d) => {
+      const rule = rules.find((r) => r.Enabled && sameKey(r.From, d.Id));
+      const verdict = rule
+        ? '<span class="ok">правило ' + esc(rule.From) + ' → ' + esc(actionSummary(rule.Action)) + '</span>'
+        : '<span class="err">правила нет</span>';
+      const alias = rule && String(rule.From).toUpperCase() !== String(d.Id || '').toUpperCase()
+        ? ' <span class="tag">алиас</span>' : '';
+      return '<div class="klog"><b>' + esc(d.Name || d.Id || '—') + '</b>' +
+        '<span class="mono">id=' + esc(d.Id || '—') + ' · scan=' + hex2(d.Scan) + ' · vk=' + hex2(d.Vk) +
+        (d.Ext ? ' · ext' : '') + (d.Down ? '' : ' · up') + '</span>' +
+        (d.Injected ? '<span class="tag">inject</span>' : '') + verdict + alias + '</div>';
+    }).join('');
+  }
+
+  function pulseStrips() {    const s = A.cfg && A.cfg.Lighting;
     if (!s) return;
     ['left', 'right'].forEach((side) => {
       const st = side === 'left' ? s.SideLeft : s.SideRight;
@@ -475,6 +509,7 @@
     A, $, $$, esc, fmt, clamp, delay, api, apiGet,
     keyName, profileObj, rulesForLayer, ruleFor, actionSummary, badgeFor, hexToRgb, stripStyle,
     applyState, onState, connectSSE, onKey, updateKeyLive, renderLiveBar, pulseStrips, playSound,
+    sameKey, canonKey, renderKeyLog,
     startCapture, finishCapture, toast, openModal, closeModal, ask, confirmBox,
     render, switchTab, start, renderHeader,
   });

@@ -407,6 +407,29 @@ namespace RyMicro
                 }));
                 return;
             }
+            if (name == "resolve" && get)
+            {
+                string id = req.QueryString["id"];
+                if (string.IsNullOrEmpty(id)) { Json(res, 400, new { ok = false, error = "Нужен id" }); return; }
+                var rule = Engine.ResolveRule(req.QueryString["profile"], req.QueryString["layer"], id);
+                if (rule == null)
+                {
+                    Reply(res, Cfg.ToJson(new { ok = true, id, matched = false, note = "правило не найдено" }));
+                    return;
+                }
+                Reply(res, Cfg.ToJson(new
+                {
+                    ok = true,
+                    id,
+                    matched = true,
+                    from = rule.From,
+                    viaAlias = !string.Equals(rule.From, id, StringComparison.OrdinalIgnoreCase),
+                    enabled = rule.Enabled,
+                    note = rule.Note,
+                    action = rule.Action
+                }));
+                return;
+            }
             if (name == "remote-status" && get)
             {
                 Reply(res, Remote.StatusJson());

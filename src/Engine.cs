@@ -153,12 +153,68 @@ namespace RyMicro
             }
         }
 
-        static Rule Find(List<Rule> rules, string id)
+        static string HeldKey(string id)
+        {
+            if (HeldTargets.ContainsKey(id)) return id;
+            foreach (var k in HeldTargets.Keys)
+                if (SameKey(k, id)) return k;
+            return null;
+        }
+
+        /// <summary>Какое правило сработает для клавиши — для диагностики в панели.</summary>
+        public static Rule ResolveRule(string profileName, string layer, string id)
+        {
+            Profile p;
+            if (profileName == null || !Cfg.Current.Profiles.TryGetValue(profileName, out p)) p = Profile();
+            if (p == null) return null;
+            lock (Sync)
+            {
+                if (!string.IsNullOrEmpty(layer))
+                {
+                    List<Rule> rules;
+                    if (p.Layers.TryGetValue(layer, out rules))
+                    {
+                        var found = Find(rules, id);
+                        if (found != null) return found;
+                    }
+                }
+                return Find(p.Rules, id);
+            }
+        }
+
+        public static Rule Find(List<Rule> rules, string id)
         {
             Rule best = null;
             foreach (var r in rules)
-                if (r.Enabled && string.Equals(r.From, id, StringComparison.OrdinalIgnoreCase)) best = r;
+                if (r.Enabled && SameKey(r.From, id)) best = r;
             return best;
+        }
+
+        /// <summary>
+        /// Сравнение клавиш с учётом «алиасов» модификаторов.
+        /// Прошивки дешёвых клавиатур иногда присылают Win без extended-флага,
+        /// а Alt — как правый (E038). Без этого бинд «Win → Alt» молча не срабатывает.
+        /// </summary>
+        public static bool SameKey(string a, string b)
+        {
+            if (string.Equals(a, b, StringComparison.OrdinalIgnoreCase)) return true;
+            string ca = Canon(a), cb = Canon(b);
+            return ca != null && ca == cb;
+        }
+
+        static string Canon(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return null;
+            switch (id.ToUpperInvariant())
+            {
+                case "5B": case "E05B": return "LWIN";
+                case "5C": case "E05C": return "RWIN";
+                case "5D": case "E05D": return "MENU";
+                case "38": case "E038": return "ALT";
+                case "1D": case "E01D": return "CTRL";
+                case "2A": case "36": return "SHIFT";
+            }
+            return null;
         }
 
         static void Apply(KeyEvent e, Rule rule)
@@ -181,11 +237,12 @@ namespace RyMicro
                     List<KeyDef> held;
                     lock (Sync)
                     {
+                        string hk = HeldKey(e.Id);
                         if (e.Down)
                         {
-                            if (HeldTargets.TryGetValue(e.Id, out held))
+                            if (hk != null)
                             {
-                                foreach (var t in held) Native.SendScan(t.Scan, t.Ext, true);
+                                foreach (var t in HeldTargets[hk]) Native.SendScan(t.Scan, t.Ext, true);
                                 return;
                             }
                             foreach (var t in targets) Native.SendScan(t.Scan, t.Ext, true);
@@ -193,10 +250,11 @@ namespace RyMicro
                         }
                         else
                         {
-                            if (HeldTargets.TryGetValue(e.Id, out held))
+                            if (hk != null)
                             {
+                                held = HeldTargets[hk];
                                 for (int i = held.Count - 1; i >= 0; i--) Native.SendScan(held[i].Scan, held[i].Ext, false);
-                                HeldTargets.Remove(e.Id);
+                                HeldTargets.Remove(hk);
                             }
                         }
                     }

@@ -55,10 +55,12 @@ namespace RyMicro
                         bool ext = (k.flags & Native.LLKHF_EXTENDED) != 0;
                         string id = Keys.IdFromScan(k.scanCode, ext);
                         var def = Keys.Get(id);
-                        if (id == null)
+                        if (def == null)
                         {
-                            id = "VK_" + k.vkCode.ToString("X2");
-                            def = Keys.ByVkCode(k.vkCode);
+                            // Прошивка могла не выставить extended-флаг (Win/Menu) — уточняем по VK.
+                            var byVk = Keys.ByVkCode(k.vkCode);
+                            if (byVk != null) { id = byVk.Id; def = byVk; }
+                            else if (id == null) id = "VK_" + k.vkCode.ToString("X2");
                         }
                         var e = new KeyEvent
                         {
