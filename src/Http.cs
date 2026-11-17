@@ -103,7 +103,7 @@ namespace RyMicro
 
     public static class Http
     {
-        public const string Version = "1.1.0";
+        public const string Version = "1.1.1";
         static HttpListener _listener;
         public static int Port;
         public static string Token;
@@ -382,6 +382,7 @@ namespace RyMicro
                         usage = "0x" + d.Usage.ToString("X4"),
                         vendorSpecific = vendor,
                         outputLen = d.OutputReportByteLength,
+                        inputLen = d.InputReportByteLength,
                         featureLen = d.FeatureReportByteLength,
                         canWrite = d.CanWrite
                     });
@@ -830,6 +831,20 @@ namespace RyMicro
                         int pid = ParseHexInt(S(d, "pid", "2380"));
                         int minUsage = ParseHexInt(S(d, "usagePage", "0"));
                         string result = Hid.Send(vid, pid, S(d, "hex", ""), I(d, "reportId"), B(d, "output"), minUsage);
+                        Reply(res, Cfg.ToJson(new { ok = result.StartsWith("OK"), message = result }));
+                    }
+                    catch (Exception ex) { Json(res, 400, new { ok = false, error = ex.Message }); }
+                    return;
+                }
+
+                if (name == "hid-read")
+                {
+                    try
+                    {
+                        int vid = ParseHexInt(S(d, "vid", "352D"));
+                        int pid = ParseHexInt(S(d, "pid", "2380"));
+                        int minUsage = ParseHexInt(S(d, "usagePage", "0"));
+                        string result = Hid.Read(vid, pid, minUsage, I(d, "reportId"));
                         Reply(res, Cfg.ToJson(new { ok = result.StartsWith("OK"), message = result }));
                     }
                     catch (Exception ex) { Json(res, 400, new { ok = false, error = ex.Message }); }

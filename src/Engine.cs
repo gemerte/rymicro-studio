@@ -184,10 +184,17 @@ namespace RyMicro
 
         public static Rule Find(List<Rule> rules, string id)
         {
-            Rule best = null;
+            // Сначала точное совпадение id: если на клавишу есть и точное правило,
+            // и «алиасное» (например, 38 → Win при наличии E038 → слой),
+            // выигрывает точное. Иначе левый/правый Alt путались между собой.
+            Rule exact = null, alias = null;
             foreach (var r in rules)
-                if (r.Enabled && SameKey(r.From, id)) best = r;
-            return best;
+            {
+                if (!r.Enabled) continue;
+                if (string.Equals(r.From, id, StringComparison.OrdinalIgnoreCase)) exact = r;
+                else if (SameKey(r.From, id)) alias = r;
+            }
+            return exact ?? alias;
         }
 
         /// <summary>

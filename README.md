@@ -91,7 +91,7 @@
 
 ## Быстрый старт
 
-Готовая сборка: [RYMICRO-Studio-1.1.0.zip](https://github.com/gemerte/rymicro-studio/releases/latest) — распакуйте и запустите `start.cmd`.
+Готовая сборка: [RYMICRO-Studio-1.1.1.zip](https://github.com/gemerte/rymicro-studio/releases/latest) — распакуйте и запустите `start.cmd`.
 
 Или соберите сами:
 
@@ -149,6 +149,7 @@ src/                 — исходники C#
 | `GET /api/resolve?id=E05B` | какое правило сработает для клавиши |
 | `POST /api/openrgb` | `probe` / `apply` / `rainbow` / `off` |
 | `POST /api/hid-send` | HID feature/output-репорт (можно указать `usagePage`) |
+| `POST /api/hid-read` | чтение одного input-репорта (безопасно, ничего не меняет) |
 | `GET /api/remote-status` | состояние пульта, ссылка и токен |
 | `POST /api/remote-apply`, `remote-token`, `remote-open`, `firewall` | управление пультом |
 | `POST /api/suspend`, `pause` | временно отключить перехват |

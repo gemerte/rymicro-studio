@@ -155,6 +155,7 @@
           <div class="row" style="margin-bottom:10px">
             <input type="text" id="hidHex" class="mono" placeholder="05 00 01 FF 00 …" style="flex:1;min-width:180px">
             <button class="btn sm" data-act="hid-send">Отправить</button>
+            <button class="btn ghost sm" data-act="hid-read" title="Запросить input-репорт (ничего не меняет в устройстве)">Прочитать ответ</button>
           </div>
           <div class="hid-list" id="hidList"></div>
           <div class="console" id="hidLog" style="height:96px;margin-top:10px"></div>
@@ -319,6 +320,8 @@
         await loadHid();
       } else if (act === 'hid-send') {
         await sendHid();
+      } else if (act === 'hid-read') {
+        await readHid();
       } else if (act === 'hid-save') {
         const name = await ask('Сохранить пакет', 'Название для сохранения HEX-пакета:', 'Пакет ' + (L.HidSnippets.length + 1));
         if (!name) return;
@@ -413,6 +416,19 @@
     };
     try {
       const r = await api('hid-send', body);
+      logHid(r.message || (r.ok ? 'OK' : 'Ошибка'), !!r.ok);
+    } catch (e) { logHid('Ошибка запроса: ' + e.message, false); }
+  }
+
+  async function readHid() {
+    const body = {
+      vid: ($('#hidVid') || {}).value || '352D',
+      pid: ($('#hidPid') || {}).value || '2380',
+      usagePage: (($('#hidUsage') || {}).value || '').trim(),
+      reportId: Number(($('#hidReport') || {}).value || 0),
+    };
+    try {
+      const r = await api('hid-read', body);
       logHid(r.message || (r.ok ? 'OK' : 'Ошибка'), !!r.ok);
     } catch (e) { logHid('Ошибка запроса: ' + e.message, false); }
   }

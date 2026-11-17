@@ -16,6 +16,7 @@ namespace RyMicro
         public int UsagePage { get; set; }
         public int Usage { get; set; }
         public int OutputReportByteLength { get; set; }
+        public int InputReportByteLength { get; set; }
         public int FeatureReportByteLength { get; set; }
         public bool CanWrite { get; set; }
     }
@@ -106,6 +107,9 @@ namespace RyMicro
         static extern bool HidD_SetFeature(SafeFileHandle h, byte[] buffer, int length);
 
         [DllImport("hid.dll", SetLastError = true)]
+        static extern bool HidD_GetInputReport(SafeFileHandle h, byte[] buffer, int length);
+
+        [DllImport("hid.dll", SetLastError = true)]
         static extern bool HidD_GetPreparsedData(SafeFileHandle h, out IntPtr preparsedData);
 
         [DllImport("hid.dll", SetLastError = true)]
@@ -182,6 +186,7 @@ namespace RyMicro
                                             dev.UsagePage = caps.UsagePage;
                                             dev.Usage = caps.Usage;
                                             dev.OutputReportByteLength = caps.OutputReportByteLength;
+                                            dev.InputReportByteLength = caps.InputReportByteLength;
                                             dev.FeatureReportByteLength = caps.FeatureReportByteLength;
                                         }
                                     }
@@ -263,8 +268,29 @@ namespace RyMicro
             }
         }
 
-        public static byte[] ParseHex(string hex)
+        /// <summary>Чтение одного input-репорта (безопасно: ничего не меняет в устройстве).</summary>
+        public static string Read(int vid, int pid, int minUsagePage, int reportId)
         {
+            var dev = Find(vid, pid, minUsagePage);
+            if (dev == null) return "Устройство HID не найдено";
+
+            int size = dev.InputReportByteLength > 0 ? dev.InputReportByteLength : 64;
+            var buffer = new byte[size];
+            buffer[0] = (byte)reportId;
+
+            using (var h = CreateFile(dev.Path, GENERIC_READ,
+                FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero))
+            {
+                if (h.IsInvalid) return "Не удалось открыть устройство (err " + Marshal.GetLastWin32Error() + ")";
+                if (!HidD_GetInputReport(h, buffer, size))
+                    return "Нет ответа input-репорта (err " + Marshal.GetLastWin32Error() + "). Устройство может не поддерживать чтение.";
+                var sb = new StringBuilder();
+                foreach (var b in buffer) sb.Append(b.ToString("X2")).Append(' ');
+                return "OK (" + size + " байт): " + sb.ToString().Trim();
+            }
+        }
+
+        public static byte[] ParseHex(string hex)        {
             if (string.IsNullOrWhiteSpace(hex)) return new byte[0];
             var clean = new StringBuilder();
             foreach (char c in hex)
