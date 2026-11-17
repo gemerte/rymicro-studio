@@ -84,7 +84,7 @@
             <button class="btn ghost sm" data-act="diag">Проверить доступ</button>
           </div>
         </div>
-        <div class="kbd-hint" style="margin-top:10px">Схема ниже (цвета, эффекты, PNG/WebM) — это <b>превью и дизайн</b>. На большинстве бюджетных клавиатур RGB управляется прошивкой через <b>FN</b>, и софт его не меняет. Если найдётся vendor-интерфейс — появится шанс слать HID-пакеты.</div>
+        <div class="kbd-hint" style="margin-top:10px">Схема ниже (цвета, эффекты, PNG/WebM) — это <b>превью и дизайн</b>. На большинстве бюджетных клавиатур RGB управляется прошивкой через <b>FN</b>, и софт его не меняет. У этой модели есть vendor-канал (<span class="mono">usage page FF00, report ID 4, 63 байта</span>) — он читается, поэтому в HID-консоли можно проверить, сообщает ли прошивка своё состояние подсветки.</div>
       </div>
 
       <div class="light-grid">
@@ -156,9 +156,12 @@
             <input type="text" id="hidHex" class="mono" placeholder="05 00 01 FF 00 …" style="flex:1;min-width:180px">
             <button class="btn sm" data-act="hid-send">Отправить</button>
             <button class="btn ghost sm" data-act="hid-read" title="Запросить input-репорт (ничего не меняет в устройстве)">Прочитать ответ</button>
+            <button class="btn ghost sm" data-act="hid-caps" title="Показать, какие отчёты и поля объявляет устройство">Структура отчётов</button>
+            <button class="btn ghost sm" data-act="hid-watch" title="Слушать input-отчёты 10 секунд и показать все изменения">Слушать канал 10 с</button>
           </div>
           <div class="hid-list" id="hidList"></div>
-          <div class="console" id="hidLog" style="height:96px;margin-top:10px"></div>
+          <div class="console" id="hidLog" style="height:170px;margin-top:10px"></div>
+          <div class="kbd-hint" style="margin-top:10px">Как понять, управляется ли подсветка программно: нажмите «Слушать канал 10 с» и, пока идёт запись, переключите режим подсветки клавишами FN. Если HEX-пакеты меняются — прошивка сообщает своё состояние, и тогда цвет можно задавать из программы. Если пакет всё время один и тот же (у этой модели — <span class="mono">01 00 00 …</span>), канал служебный и свои цвета без новой прошивки невозможны.</div>
           <hr class="sep">
           <div class="row between" style="margin-bottom:8px"><span class="muted" style="font-size:12px">Сохранённые пакеты</span><button class="btn ghost sm" data-act="hid-save">+ Сохранить</button></div>
           <div id="snippets" style="display:flex;flex-direction:column;gap:6px">${snippetRows()}</div>
@@ -322,6 +325,10 @@
         await sendHid();
       } else if (act === 'hid-read') {
         await readHid();
+      } else if (act === 'hid-caps') {
+        await capsHid();
+      } else if (act === 'hid-watch') {
+        await watchHid();
       } else if (act === 'hid-save') {
         const name = await ask('Сохранить пакет', 'Название для сохранения HEX-пакета:', 'Пакет ' + (L.HidSnippets.length + 1));
         if (!name) return;
@@ -430,6 +437,25 @@
     try {
       const r = await api('hid-read', body);
       logHid(r.message || (r.ok ? 'OK' : 'Ошибка'), !!r.ok);
+    } catch (e) { logHid('Ошибка запроса: ' + e.message, false); }
+  }
+
+  async function capsHid() {
+    try {
+      const r = await api('hid-caps', { vid: ($('#hidVid') || {}).value || '352D', pid: ($('#hidPid') || {}).value || '2380', usagePage: (($('#hidUsage') || {}).value || '').trim() });
+      logHid('Структура отчётов:\n' + (r.text || r.error || ''), true);
+    } catch (e) { logHid('Ошибка запроса: ' + e.message, false); }
+  }
+
+  async function watchHid() {
+    const rid = Number(($('#hidReport') || {}).value || 0);
+    logHid('Слушаю канал 10 секунд. Пока идёт запись — переключайте подсветку клавишами FN. Если пакеты меняются, прошивка сообщает своё состояние.', true);
+    try {
+      const r = await api('hid-watch', {
+        vid: ($('#hidVid') || {}).value || '352D', pid: ($('#hidPid') || {}).value || '2380',
+        usagePage: (($('#hidUsage') || {}).value || 'FF00').trim(), reportId: rid || 4, seconds: 10,
+      });
+      logHid(r.text || r.error || '', true);
     } catch (e) { logHid('Ошибка запроса: ' + e.message, false); }
   }
 

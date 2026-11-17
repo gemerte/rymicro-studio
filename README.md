@@ -150,6 +150,9 @@ src/                 — исходники C#
 | `POST /api/openrgb` | `probe` / `apply` / `rainbow` / `off` |
 | `POST /api/hid-send` | HID feature/output-репорт (можно указать `usagePage`) |
 | `POST /api/hid-read` | чтение одного input-репорта (безопасно, ничего не меняет) |
+| `POST /api/hid-caps` | структура отчётов: report id, биты, поля |
+| `POST /api/hid-descriptor` | сырой HID report descriptor |
+| `POST /api/hid-watch` | опрос канала N секунд, все различные пакеты |
 | `GET /api/remote-status` | состояние пульта, ссылка и токен |
 | `POST /api/remote-apply`, `remote-token`, `remote-open`, `firewall` | управление пультом |
 | `POST /api/suspend`, `pause` | временно отключить перехват |

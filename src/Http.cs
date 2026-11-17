@@ -103,7 +103,7 @@ namespace RyMicro
 
     public static class Http
     {
-        public const string Version = "1.1.1";
+        public const string Version = "1.1.2";
         static HttpListener _listener;
         public static int Port;
         public static string Token;
@@ -832,6 +832,46 @@ namespace RyMicro
                         int minUsage = ParseHexInt(S(d, "usagePage", "0"));
                         string result = Hid.Send(vid, pid, S(d, "hex", ""), I(d, "reportId"), B(d, "output"), minUsage);
                         Reply(res, Cfg.ToJson(new { ok = result.StartsWith("OK"), message = result }));
+                    }
+                    catch (Exception ex) { Json(res, 400, new { ok = false, error = ex.Message }); }
+                    return;
+                }
+
+                if (name == "hid-watch")
+                {
+                    try
+                    {
+                        int vid = ParseHexInt(S(d, "vid", "352D"));
+                        int pid = ParseHexInt(S(d, "pid", "2380"));
+                        int usage = ParseHexInt(S(d, "usagePage", "FF00"));
+                        string text = Hid.Watch(vid, pid, usage, I(d, "reportId", 4), I(d, "seconds", 10));
+                        Reply(res, Cfg.ToJson(new { ok = true, text = text }));
+                    }
+                    catch (Exception ex) { Json(res, 400, new { ok = false, error = ex.Message }); }
+                    return;
+                }
+
+                if (name == "hid-caps")
+                {
+                    try
+                    {
+                        int vid = ParseHexInt(S(d, "vid", "352D"));
+                        int pid = ParseHexInt(S(d, "pid", "2380"));
+                        int usage = ParseHexInt(S(d, "usagePage", "0"));
+                        Reply(res, Cfg.ToJson(new { ok = true, text = Hid.Caps(vid, pid, usage) }));
+                    }
+                    catch (Exception ex) { Json(res, 400, new { ok = false, error = ex.Message }); }
+                    return;
+                }
+
+                if (name == "hid-descriptor")
+                {
+                    try
+                    {
+                        int vid = ParseHexInt(S(d, "vid", "352D"));
+                        int pid = ParseHexInt(S(d, "pid", "2380"));
+                        string text = Hid.Describe(vid, pid);
+                        Reply(res, Cfg.ToJson(new { ok = true, text = text }));
                     }
                     catch (Exception ex) { Json(res, 400, new { ok = false, error = ex.Message }); }
                     return;

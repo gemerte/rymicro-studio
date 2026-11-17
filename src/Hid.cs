@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using Microsoft.Win32.SafeHandles;
 
 namespace RyMicro
@@ -120,12 +121,62 @@ namespace RyMicro
 
         const int HIDP_STATUS_SUCCESS = 0x00110000;
 
+        [StructLayout(LayoutKind.Sequential)]
+        struct HIDP_VALUE_CAPS
+        {
+            public ushort UsagePage;
+            public byte ReportID;
+            public byte IsAlias;
+            public ushort BitField;
+            public ushort LinkCollection;
+            public ushort LinkUsage;
+            public ushort LinkUsagePage;
+            public byte IsRange;
+            public byte IsStringRange;
+            public byte IsDesignatorRange;
+            public byte IsAbsolute;
+            public byte HasNull;
+            public byte Reserved;
+            public ushort BitSize;
+            public ushort ReportCount;
+            public ushort R2a, R2b, R2c, R2d, R2e;
+            public uint UnitsExp;
+            public uint Units;
+            public int LogicalMin;
+            public int LogicalMax;
+            public int PhysicalMin;
+            public int PhysicalMax;
+            public ushort UsageMin;
+            public ushort UsageMax;
+            public ushort StringMin;
+            public ushort StringMax;
+            public ushort DesignatorMin;
+            public ushort DesignatorMax;
+            public ushort DataIndexMin;
+            public ushort DataIndexMax;
+        }
+
+        [DllImport("hid.dll")]
+        static extern int HidP_GetValueCaps(short reportType, [In, Out] HIDP_VALUE_CAPS[] caps,
+            ref ushort length, IntPtr preparsedData);
+
+        const short HidP_Input = 0;
+        const short HidP_Output = 1;
+        const short HidP_Feature = 2;
+
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         static extern SafeFileHandle CreateFile(string fileName, uint access, uint share,
             IntPtr security, uint creation, uint flags, IntPtr template);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         static extern bool WriteFile(SafeFileHandle h, byte[] buffer, int bytesToWrite, out int bytesWritten, IntPtr overlapped);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool DeviceIoControl(SafeFileHandle h, uint code, IntPtr inBuf, int inSize,
+            byte[] outBuf, int outSize, out int returned, IntPtr overlapped);
+
+        // CTL_CODE(FILE_DEVICE_KEYBOARD=0x0B, 1, METHOD_BUFFERED, FILE_ANY_ACCESS)
+        const uint IOCTL_HID_GET_REPORT_DESCRIPTOR = 0x000B0001;
 
         const uint GENERIC_READ = 0x80000000;
         const uint GENERIC_WRITE = 0x40000000;
@@ -288,6 +339,168 @@ namespace RyMicro
                 foreach (var b in buffer) sb.Append(b.ToString("X2")).Append(' ');
                 return "OK (" + size + " байт): " + sb.ToString().Trim();
             }
+        }
+
+        /// <summary>
+        /// HID report descriptor интерфейса — официальная «схема» того, какие отчёты и поля
+        /// устройство объявляет. Только чтение, ничего не меняет.
+        /// </summary>
+        public static byte[] Descriptor(string path)
+        {
+            using (var h = CreateFile(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero))
+            {
+                if (h.IsInvalid) return null;
+                var buf = new byte[4096];
+                int got;
+                if (!DeviceIoControl(h, IOCTL_HID_GET_REPORT_DESCRIPTOR, IntPtr.Zero, 0, buf, buf.Length, out got, IntPtr.Zero))
+                    return null;
+                if (got <= 0) return null;
+                var res = new byte[got];
+                Array.Copy(buf, res, got);
+                return res;
+            }
+        }
+
+        public static string Hex(byte[] data)
+        {
+            if (data == null) return "";
+            var sb = new StringBuilder(data.Length * 3);
+            foreach (var b in data) sb.Append(b.ToString("X2")).Append(' ');
+            return sb.ToString().Trim();
+        }
+
+        /// <summary>Все интерфейсы клавиатуры + их дескрипторы отчётов (для разбора протокола подсветки).</summary>
+        public static string Describe(int vid, int pid)
+        {
+            var list = new List<HidDevice>();
+            foreach (var d in Enumerate())
+                if (d.Vid == vid && d.Pid == pid) list.Add(d);
+            if (list.Count == 0) return "Устройство HID " + vid.ToString("X4") + ":" + pid.ToString("X4") + " не найдено";
+            var sb = new StringBuilder();
+            foreach (var d in list)
+            {
+                sb.AppendLine("=== usagePage=0x" + d.UsagePage.ToString("X4") + " usage=0x" + d.Usage.ToString("X4")
+                    + " out=" + d.OutputReportByteLength + " in=" + d.InputReportByteLength
+                    + " feature=" + d.FeatureReportByteLength + " canWrite=" + d.CanWrite);
+                sb.AppendLine("path=" + d.Path);
+                var desc = Descriptor(d.Path);
+                sb.AppendLine(desc == null ? "descriptor: недоступен" : "descriptor (" + desc.Length + " байт):");
+                sb.AppendLine(Hex(desc));
+                sb.AppendLine();
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>Точная структура отчётов по данным HID (usage, размер поля, report id). Только чтение.</summary>
+        public static string Caps(int vid, int pid, int usagePageFilter)
+        {
+            var sb = new StringBuilder();
+            int found = 0;
+            foreach (var d in Enumerate())
+            {
+                if (d.Vid != vid || d.Pid != pid) continue;
+                if (usagePageFilter != 0 && d.UsagePage != usagePageFilter) continue;
+                found++;
+                sb.AppendLine("=== usagePage=0x" + d.UsagePage.ToString("X4") + " usage=0x" + d.Usage.ToString("X4")
+                    + " out=" + d.OutputReportByteLength + " in=" + d.InputReportByteLength
+                    + " feature=" + d.FeatureReportByteLength);
+                using (var h = CreateFile(d.Path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero))
+                {
+                    if (h.IsInvalid) { sb.AppendLine("  открыть не удалось: " + Marshal.GetLastWin32Error()); continue; }
+                    IntPtr prep;
+                    if (!HidD_GetPreparsedData(h, out prep) || prep == IntPtr.Zero)
+                    {
+                        sb.AppendLine("  preparsed data недоступна");
+                        continue;
+                    }
+                    try
+                    {
+                        AppendCaps(sb, prep, HidP_Input, "input");
+                        AppendCaps(sb, prep, HidP_Output, "output");
+                        AppendCaps(sb, prep, HidP_Feature, "feature");
+                    }
+                    finally { HidD_FreePreparsedData(prep); }
+                }
+                sb.AppendLine();
+            }
+            if (found == 0) return "Интерфейсы не найдены";
+            return sb.ToString();
+        }
+
+        static void AppendCaps(StringBuilder sb, IntPtr prep, short type, string label)
+        {
+            ushort len = 0;
+            HidP_GetValueCaps(type, null, ref len, prep);
+            if (len == 0)
+            {
+                sb.AppendLine("  " + label + ": нет value-полей");
+                return;
+            }
+            var arr = new HIDP_VALUE_CAPS[len];
+            int st = HidP_GetValueCaps(type, arr, ref len, prep);
+            if (st != HIDP_STATUS_SUCCESS)
+            {
+                sb.AppendLine("  " + label + ": HidP_GetValueCaps = 0x" + st.ToString("X8"));
+                return;
+            }
+            sb.AppendLine("  " + label + ": " + len + " полей");
+            foreach (var c in arr)
+            {
+                sb.AppendLine("    report=" + c.ReportID
+                    + " usagePage=0x" + c.UsagePage.ToString("X4")
+                    + (c.IsRange != 0
+                        ? " usages=0x" + c.UsageMin.ToString("X4") + "..0x" + c.UsageMax.ToString("X4")
+                        : " usage=0x" + c.UsageMin.ToString("X4"))
+                    + " bits=" + c.BitSize + " count=" + c.ReportCount
+                    + " logical=" + c.LogicalMin + ".." + c.LogicalMax
+                    + (c.IsAbsolute != 0 ? " abs" : " rel"));
+            }
+        }
+
+        /// <summary>
+        /// Слушает input-отчёты заданное время и возвращает все различные пакеты.
+        /// Безопасно: только чтение. Позволяет увидеть, сообщает ли прошивка своё состояние
+        /// подсветки (тогда режим/яркость/цвет можно будет и записать обратно).
+        /// </summary>
+        public static string Watch(int vid, int pid, int minUsagePage, int reportId, int seconds)
+        {
+            var dev = Find(vid, pid, minUsagePage);
+            if (dev == null) return "Устройство HID не найдено";
+            int size = dev.InputReportByteLength > 0 ? dev.InputReportByteLength : 64;
+            if (seconds < 1) seconds = 1;
+            if (seconds > 30) seconds = 30;
+
+            var seen = new Dictionary<string, int>();
+            var order = new List<string>();
+            var sb = new StringBuilder();
+            int ok = 0, fail = 0, lastErr = 0;
+
+            using (var h = CreateFile(dev.Path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero))
+            {
+                if (h.IsInvalid) return "Не удалось открыть устройство (err " + Marshal.GetLastWin32Error() + ")";
+                var deadline = DateTime.UtcNow.AddSeconds(seconds);
+                while (DateTime.UtcNow < deadline)
+                {
+                    var buf = new byte[size];
+                    buf[0] = (byte)reportId;
+                    if (HidD_GetInputReport(h, buf, size))
+                    {
+                        ok++;
+                        string hex = Hex(buf);
+                        if (!seen.ContainsKey(hex)) { seen[hex] = 1; order.Add(hex); }
+                        else seen[hex]++;
+                    }
+                    else { fail++; lastErr = Marshal.GetLastWin32Error(); }
+                    Thread.Sleep(200);
+                }
+            }
+
+            sb.AppendLine("опросов: " + (ok + fail) + ", ответов: " + ok + ", ошибок: " + fail
+                + (fail > 0 ? " (последняя err " + lastErr + ")" : ""));
+            sb.AppendLine("различных пакетов: " + order.Count);
+            foreach (var hex in order) sb.AppendLine("× " + seen[hex] + "  " + hex);
+            return sb.ToString().TrimEnd();
         }
 
         public static byte[] ParseHex(string hex)        {
